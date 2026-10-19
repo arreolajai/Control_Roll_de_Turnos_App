@@ -1,0 +1,990 @@
+<!DOCTYPE html>
+<html lang="es-MX">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Control de Roll de Turnos</title>
+<meta name="description" content="Control de roll de turnos para personal sindicalizado y empleados" />
+<meta name="theme-color" content="#0f2440" />
+<link rel="manifest" href="manifest.json" />
+<link rel="icon" href="icons/icon-192.png" />
+<link rel="apple-touch-icon" href="icons/icon-192.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="RollTurnos" />
+
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
+
+<style>
+  :root{
+    --azul-900:#0f2440;
+    --azul-800:#163258;
+    --azul-700:#1e4273;
+    --azul-600:#2a5a9a;
+    --naranja:#f2954a;
+    --naranja-dark:#d97a2e;
+    --gris-100:#f5f7fa;
+    --gris-200:#e9edf3;
+    --gris-300:#dde3eb;
+    --gris-500:#8a96a8;
+    --gris-700:#4a5567;
+    --rojo:#d64545;
+    --verde:#2f9e58;
+    --radius:10px;
+    --shadow: 0 2px 10px rgba(15,36,64,.08);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;height:100%;}
+  body{
+    font-family: "Segoe UI", Roboto, system-ui, -apple-system, Arial, sans-serif;
+    background: var(--gris-100);
+    color:#1b2432;
+    -webkit-tap-highlight-color: transparent;
+  }
+  /* ---------- Topbar ---------- */
+  .topbar{
+    position:sticky; top:0; z-index:40;
+    background: linear-gradient(135deg, var(--azul-900), var(--azul-700));
+    color:#fff;
+    padding:12px 16px;
+    display:flex; align-items:center; gap:12px;
+    box-shadow: var(--shadow);
+  }
+  .topbar img.logo{width:36px;height:36px;border-radius:8px;flex-shrink:0;}
+  .topbar .titles{flex:1; min-width:0;}
+  .topbar h1{font-size:16px;margin:0; font-weight:600; letter-spacing:.2px;}
+  .topbar .sub{font-size:11.5px; opacity:.85; margin-top:1px;}
+  .btn-install{
+    background: var(--naranja); color:#20150a; border:none;
+    padding:8px 12px; border-radius:8px; font-weight:600; font-size:12.5px;
+    cursor:pointer; white-space:nowrap; display:none;
+  }
+  .btn-install.show{display:inline-flex; align-items:center; gap:6px;}
+
+  /* ---------- Toolbar ---------- */
+  .toolbar{
+    background:#fff; border-bottom:1px solid var(--gris-300);
+    padding:10px 14px; display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end;
+    position:sticky; top:60px; z-index:35;
+  }
+  .field{display:flex; flex-direction:column; gap:3px;}
+  .field label{font-size:10.5px; text-transform:uppercase; letter-spacing:.4px; color:var(--gris-700); font-weight:600;}
+  .field select, .field input[type=text], .field input[type=date]{
+    padding:7px 9px; border:1px solid var(--gris-300); border-radius:8px; font-size:13px;
+    background:#fff; min-width:120px; color:#1b2432;
+  }
+  .week-nav{display:flex; align-items:center; gap:6px;}
+  .week-nav button{
+    border:1px solid var(--gris-300); background:#fff; border-radius:8px; width:32px;height:32px;
+    cursor:pointer; font-size:15px; color:var(--azul-800); display:flex;align-items:center;justify-content:center;
+  }
+  .week-nav button:hover{background:var(--gris-200);}
+  .week-label{font-size:12.5px; font-weight:600; color:var(--azul-800); padding:0 4px; white-space:nowrap;}
+  .spacer{flex:1;}
+  .actions{display:flex; gap:8px; flex-wrap:wrap;}
+  .btn{
+    border:none; border-radius:8px; padding:8px 13px; font-size:12.5px; font-weight:600;
+    cursor:pointer; display:inline-flex; align-items:center; gap:6px; white-space:nowrap;
+  }
+  .btn-primary{background:var(--azul-700); color:#fff;}
+  .btn-primary:hover{background:var(--azul-800);}
+  .btn-orange{background:var(--naranja); color:#211609;}
+  .btn-orange:hover{background:var(--naranja-dark);}
+  .btn-outline{background:#fff; color:var(--azul-800); border:1px solid var(--gris-300);}
+  .btn-outline:hover{background:var(--gris-200);}
+  .btn-danger{background:#fff; color:var(--rojo); border:1px solid #f3c6c6;}
+  .btn-danger:hover{background:#fdeeee;}
+  .btn:disabled{opacity:.45; cursor:not-allowed;}
+
+  /* ---------- Content ---------- */
+  .content{padding:14px;}
+  .summary-row{display:flex; gap:10px; flex-wrap:wrap; margin-bottom:12px;}
+  .chip{
+    background:#fff; border:1px solid var(--gris-300); border-radius:20px; padding:6px 13px;
+    font-size:12px; color:var(--gris-700); display:flex; gap:6px; align-items:center;
+  }
+  .chip b{color:var(--azul-800); font-size:13px;}
+
+  .table-wrap{
+    background:#fff; border-radius:var(--radius); box-shadow:var(--shadow);
+    overflow:auto; max-width:100%;
+  }
+  table.roster{border-collapse:collapse; width:100%; min-width:900px; font-size:12.5px;}
+  table.roster thead th{
+    background: var(--azul-800); color:#fff; padding:8px 7px; font-size:11px;
+    text-transform:uppercase; letter-spacing:.3px; position:sticky; top:0; z-index:5;
+    text-align:center; white-space:nowrap;
+  }
+  table.roster thead th.day-head{min-width:58px;}
+  table.roster thead th .day-name{display:block;font-weight:700;}
+  table.roster thead th .day-date{display:block;font-weight:400; font-size:10px; opacity:.85; margin-top:1px;}
+  table.roster thead th.sticky-col{position:sticky; left:0; z-index:8; text-align:left;}
+  table.roster thead th.sticky-col.col2{z-index:7;}
+
+  table.roster tbody td{
+    border-bottom:1px solid var(--gris-200); padding:6px 7px; white-space:nowrap;
+  }
+  table.roster tbody tr:hover{background:#fbfcfe;}
+  table.roster tbody td.sticky-col{
+    position:sticky; background:#fff; z-index:3;
+  }
+  table.roster tbody tr:hover td.sticky-col{background:#fbfcfe;}
+  td.col-area{left:0; font-weight:600; color:var(--azul-800); max-width:120px; overflow:hidden; text-overflow:ellipsis;}
+  td.col-nombre{font-weight:600; max-width:200px; overflow:hidden; text-overflow:ellipsis;}
+  td.col-ficha{text-align:center; color:var(--gris-700);}
+  td.col-tipo{text-align:center;}
+  td.col-nota{max-width:160px; overflow:hidden; text-overflow:ellipsis; color:var(--gris-700); font-style:italic;}
+  .badge-tipo{
+    border-radius:14px; padding:3px 9px; font-size:10.5px; font-weight:700;
+  }
+  .badge-empleado{background:#e4eefb; color:#1d5aa3;}
+  .badge-sindicalizado{background:#fdece0; color:#b25a16;}
+
+  td.day-cell{text-align:center; padding:3px !important;}
+  .shift-pill{
+    display:inline-flex; align-items:center; justify-content:center;
+    min-width:30px; height:26px; border-radius:7px; font-weight:700; font-size:11.5px;
+    cursor:pointer; border:1px solid transparent; user-select:none;
+  }
+  .shift-pill:hover{filter:brightness(0.95);}
+  .shift-pill.empty{background:#f3f5f8; color:#b7c0cd; border:1px dashed #cfd7e2;}
+  .row-actions{display:flex; gap:5px;}
+  .icon-btn{
+    border:none; background:none; cursor:pointer; color:var(--gris-700); font-size:14px;
+    padding:4px 5px; border-radius:6px;
+  }
+  .icon-btn:hover{background:var(--gris-200);}
+  .icon-btn.del:hover{color:var(--rojo); background:#fdeeee;}
+
+  .empty-state{padding:40px 20px; text-align:center; color:var(--gris-500);}
+
+  /* ---------- Legend ---------- */
+  .legend{
+    margin-top:14px; background:#fff; border-radius:var(--radius); box-shadow:var(--shadow);
+    padding:12px 14px;
+  }
+  .legend h3{margin:0 0 8px; font-size:13px; color:var(--azul-800);}
+  .legend-items{display:flex; flex-wrap:wrap; gap:8px;}
+  .legend-item{display:flex; align-items:center; gap:7px; font-size:12px; background:var(--gris-100); border-radius:8px; padding:5px 9px;}
+
+  /* ---------- Modal ---------- */
+  .overlay{
+    position:fixed; inset:0; background:rgba(15,24,40,.5); display:none;
+    align-items:center; justify-content:center; z-index:100; padding:14px;
+  }
+  .overlay.show{display:flex;}
+  .modal{
+    background:#fff; border-radius:14px; width:100%; max-width:460px; max-height:90vh;
+    overflow-y:auto; box-shadow:0 14px 40px rgba(0,0,0,.25);
+  }
+  .modal-header{
+    padding:16px 18px; border-bottom:1px solid var(--gris-200); display:flex; align-items:center; justify-content:space-between;
+  }
+  .modal-header h2{font-size:15px; margin:0; color:var(--azul-800);}
+  .modal-close{border:none; background:none; font-size:18px; cursor:pointer; color:var(--gris-700);}
+  .modal-body{padding:16px 18px; display:flex; flex-direction:column; gap:12px;}
+  .modal-footer{padding:14px 18px; border-top:1px solid var(--gris-200); display:flex; justify-content:flex-end; gap:8px;}
+  .form-group{display:flex; flex-direction:column; gap:4px;}
+  .form-group label{font-size:11.5px; font-weight:600; color:var(--gris-700); text-transform:uppercase; letter-spacing:.3px;}
+  .form-group input, .form-group select, .form-group textarea{
+    padding:9px 10px; border:1px solid var(--gris-300); border-radius:8px; font-size:13.5px; font-family:inherit;
+  }
+  .form-row{display:flex; gap:10px;}
+  .form-row > .form-group{flex:1;}
+
+  .shift-picker{display:flex; flex-wrap:wrap; gap:8px;}
+  .shift-opt{
+    border:1px solid var(--gris-300); border-radius:8px; padding:8px 11px; font-size:12.5px; font-weight:700;
+    cursor:pointer; background:#fff;
+  }
+  .shift-opt.selected{outline:2px solid var(--azul-700); outline-offset:1px;}
+  .shift-opt.clear{color:var(--rojo); border-color:#f3c6c6;}
+
+  footer.app-footer{
+    text-align:center; font-size:11px; color:var(--gris-500); padding:18px 10px 26px;
+  }
+
+  @media (max-width: 720px){
+    .topbar h1{font-size:14px;}
+    .toolbar{top:56px;}
+    .field select, .field input{min-width:100px;}
+  }
+  .toast{
+    position:fixed; bottom:18px; left:50%; transform:translateX(-50%);
+    background:#1b2432; color:#fff; padding:10px 18px; border-radius:30px; font-size:13px;
+    z-index:200; opacity:0; pointer-events:none; transition:opacity .25s, transform .25s;
+    box-shadow:0 8px 20px rgba(0,0,0,.25);
+  }
+  .toast.show{opacity:1; transform:translateX(-50%) translateY(-4px);}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <img class="logo" src="icons/icon-96.png" alt="logo" />
+  <div class="titles">
+    <h1>Control de Roll de Turnos</h1>
+    <div class="sub">Mantenimiento de Planta &middot; GIMSA / Greenbrier</div>
+  </div>
+  <button class="btn-install" id="btnInstall">⬇ Instalar app</button>
+</div>
+
+<div class="toolbar">
+  <div class="field">
+    <label>Buscar</label>
+    <input type="text" id="fSearch" placeholder="Nombre o ficha..." />
+  </div>
+  <div class="field">
+    <label>Tipo de empleado</label>
+    <select id="fTipo">
+      <option value="">Todos</option>
+      <option value="Empleado">Empleado</option>
+      <option value="Sindicalizado">Sindicalizado</option>
+    </select>
+  </div>
+  <div class="field">
+    <label>Área</label>
+    <select id="fArea"><option value="">Todas</option></select>
+  </div>
+  <div class="field">
+    <label>Cuadrilla</label>
+    <select id="fCuadrilla"><option value="">Todas</option></select>
+  </div>
+
+  <div class="field">
+    <label>Semana</label>
+    <div class="week-nav">
+      <button id="btnPrevWeek" title="Semana anterior">‹</button>
+      <span class="week-label" id="weekLabel">—</span>
+      <button id="btnNextWeek" title="Semana siguiente">›</button>
+      <button id="btnToday" title="Ir a semana actual" style="width:auto;padding:0 10px;font-size:11px;">Hoy</button>
+    </div>
+  </div>
+
+  <div class="spacer"></div>
+
+  <div class="actions">
+    <button class="btn btn-primary" id="btnAddEmp">+ Empleado</button>
+    <button class="btn btn-outline" id="btnLegend">Códigos de turno</button>
+    <button class="btn btn-orange" id="btnExportExcel">Exportar Excel</button>
+    <button class="btn btn-orange" id="btnExportPdf">Exportar PDF</button>
+  </div>
+</div>
+
+<div class="content">
+  <div class="summary-row" id="summaryRow"></div>
+
+  <div class="table-wrap">
+    <table class="roster" id="rosterTable">
+      <thead>
+        <tr id="headRow"></tr>
+      </thead>
+      <tbody id="bodyRows"></tbody>
+    </table>
+    <div class="empty-state" id="emptyState" style="display:none;">No hay empleados que coincidan con el filtro.</div>
+  </div>
+
+  <div class="legend">
+    <h3>Leyenda de códigos de turno</h3>
+    <div class="legend-items" id="legendItems"></div>
+  </div>
+</div>
+
+<footer class="app-footer">Control de Roll de Turnos · Datos guardados en este dispositivo · Funciona sin conexión a Internet</footer>
+
+<!-- Modal Empleado -->
+<div class="overlay" id="empOverlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 id="empModalTitle">Nuevo empleado</h2>
+      <button class="modal-close" id="empClose">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Ficha</label>
+          <input type="text" id="empFicha" placeholder="Ej. 31138" />
+        </div>
+        <div class="form-group">
+          <label>Tipo de empleado</label>
+          <select id="empTipo">
+            <option value="Empleado">Empleado</option>
+            <option value="Sindicalizado">Sindicalizado</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Nombre</label>
+        <input type="text" id="empNombre" placeholder="Nombre completo" />
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Área</label>
+          <input type="text" id="empArea" placeholder="Ej. Nave 1-4" list="areaList" />
+          <datalist id="areaList"></datalist>
+        </div>
+        <div class="form-group">
+          <label>Cuadrilla</label>
+          <input type="text" id="empCuadrilla" placeholder="Ej. Cuadrilla 1" list="cuadrillaList" />
+          <datalist id="cuadrillaList"></datalist>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Nota</label>
+        <textarea id="empNota" rows="2" placeholder="Observaciones..."></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-danger" id="empDeleteBtn" style="display:none;">Eliminar</button>
+      <div class="spacer"></div>
+      <button class="btn btn-outline" id="empCancel">Cancelar</button>
+      <button class="btn btn-primary" id="empSave">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Turno (picker para celda) -->
+<div class="overlay" id="shiftOverlay">
+  <div class="modal" style="max-width:360px;">
+    <div class="modal-header">
+      <h2 id="shiftModalTitle">Asignar turno</h2>
+      <button class="modal-close" id="shiftClose">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="shift-picker" id="shiftPicker"></div>
+      <div class="form-group">
+        <label>Código personalizado</label>
+        <input type="text" id="shiftCustom" placeholder="Escribe un código distinto..." maxlength="6" />
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" id="shiftCancel">Cancelar</button>
+      <button class="btn btn-primary" id="shiftApply">Aplicar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Leyenda -->
+<div class="overlay" id="legendOverlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Administrar códigos de turno</h2>
+      <button class="modal-close" id="legendClose">✕</button>
+    </div>
+    <div class="modal-body" id="legendForm"></div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" id="legendAddRow">+ Agregar código</button>
+      <div class="spacer"></div>
+      <button class="btn btn-primary" id="legendSave">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* =========================================================
+   CONTROL DE ROLL DE TURNOS - Lógica de la aplicación
+   ========================================================= */
+
+const LS_EMP = "rt_employees";
+const LS_SCHED = "rt_schedule";
+const LS_LEGEND = "rt_legend";
+const LS_WEEK = "rt_weekstart";
+
+const DEFAULT_LEGEND = [
+  { code: "1",  label: "Turno 1",        color: "#dff0d8", text:"#1f6f3a" },
+  { code: "2",  label: "Turno 2",        color: "#d9e8fb", text:"#1d5aa3" },
+  { code: "3",  label: "Turno 3",        color: "#e6ddf7", text:"#5b3a9e" },
+  { code: "E2", label: "Especial T2",    color: "#fdf0c7", text:"#8a6b0c" },
+  { code: "D",  label: "Descanso",       color: "#eceff3", text:"#5a6578" },
+  { code: "F",  label: "Falta",          color: "#fbdada", text:"#a72e2e" },
+  { code: "V",  label: "Vacaciones",     color: "#fdeedd", text:"#b25a16" },
+  { code: "G",  label: "Guardia/Permiso",color: "#e0f5ef", text:"#117a5d" },
+];
+
+const DIAS = ["LUNES","MARTES","MIÉRCOLES","JUEVES","VIERNES","SÁBADO","DOMINGO"];
+
+let employees = [];
+let schedule = {};   // key: `${empId}_${yyyy-mm-dd}` -> code
+let legend = [];
+let weekStart = null; // Date (lunes)
+let editingEmpId = null;
+let activeCell = null; // {empId, dateKey}
+let deferredPrompt = null;
+
+/* ---------- Utilidades de fecha ---------- */
+function toKey(d){
+  const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,"0"), day=String(d.getDate()).padStart(2,"0");
+  return `${y}-${m}-${day}`;
+}
+function fmtDDMMYYYY(d){
+  const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,"0"), day=String(d.getDate()).padStart(2,"0");
+  return `${day}/${m}/${y}`;
+}
+function addDays(d, n){ const r=new Date(d); r.setDate(r.getDate()+n); return r; }
+function mondayOf(d){
+  const r = new Date(d);
+  const dow = r.getDay(); // 0=domingo
+  const diff = (dow === 0) ? -6 : (1 - dow);
+  r.setDate(r.getDate()+diff);
+  r.setHours(0,0,0,0);
+  return r;
+}
+function weekDates(start){
+  const arr=[];
+  for(let i=0;i<7;i++) arr.push(addDays(start,i));
+  return arr;
+}
+
+/* ---------- Persistencia ---------- */
+function loadAll(){
+  try{
+    const e = localStorage.getItem(LS_EMP);
+    employees = e ? JSON.parse(e) : null;
+  }catch(err){ employees = null; }
+
+  try{
+    const s = localStorage.getItem(LS_SCHED);
+    schedule = s ? JSON.parse(s) : {};
+  }catch(err){ schedule = {}; }
+
+  try{
+    const l = localStorage.getItem(LS_LEGEND);
+    legend = l ? JSON.parse(l) : JSON.parse(JSON.stringify(DEFAULT_LEGEND));
+  }catch(err){ legend = JSON.parse(JSON.stringify(DEFAULT_LEGEND)); }
+
+  try{
+    const w = localStorage.getItem(LS_WEEK);
+    weekStart = w ? new Date(w) : mondayOf(new Date());
+  }catch(err){ weekStart = mondayOf(new Date()); }
+}
+
+function saveEmployees(){ localStorage.setItem(LS_EMP, JSON.stringify(employees)); }
+function saveSchedule(){ localStorage.setItem(LS_SCHED, JSON.stringify(schedule)); }
+function saveLegend(){ localStorage.setItem(LS_LEGEND, JSON.stringify(legend)); }
+function saveWeek(){ localStorage.setItem(LS_WEEK, weekStart.toISOString()); }
+
+async function bootstrapEmployees(){
+  if (employees && employees.length){ return; }
+  try{
+    const res = await fetch("seed.json");
+    employees = await res.json();
+  }catch(err){
+    employees = [];
+  }
+  saveEmployees();
+}
+
+/* ---------- Toast ---------- */
+let toastTimer=null;
+function toast(msg){
+  const t=document.getElementById("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>t.classList.remove("show"), 2200);
+}
+
+/* ---------- Filtros ---------- */
+function getFilters(){
+  return {
+    search: document.getElementById("fSearch").value.trim().toLowerCase(),
+    tipo: document.getElementById("fTipo").value,
+    area: document.getElementById("fArea").value,
+    cuadrilla: document.getElementById("fCuadrilla").value,
+  };
+}
+function filteredEmployees(){
+  const f = getFilters();
+  return employees.filter(e=>{
+    if (f.tipo && e.tipo !== f.tipo) return false;
+    if (f.area && e.area !== f.area) return false;
+    if (f.cuadrilla && e.cuadrilla !== f.cuadrilla) return false;
+    if (f.search){
+      const hay = (e.nombre+" "+e.ficha).toLowerCase();
+      if (!hay.includes(f.search)) return false;
+    }
+    return true;
+  });
+}
+
+function populateSelectOptions(){
+  const areaSel = document.getElementById("fArea");
+  const cuadSel = document.getElementById("fCuadrilla");
+  const areas = Array.from(new Set(employees.map(e=>e.area).filter(Boolean))).sort();
+  const cuads = Array.from(new Set(employees.map(e=>e.cuadrilla).filter(Boolean))).sort();
+
+  const curArea = areaSel.value, curCuad = cuadSel.value;
+  areaSel.innerHTML = '<option value="">Todas</option>' + areas.map(a=>`<option value="${escapeHtml(a)}">${escapeHtml(a)}</option>`).join("");
+  cuadSel.innerHTML = '<option value="">Todas</option>' + cuads.map(c=>`<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("");
+  areaSel.value = areas.includes(curArea) ? curArea : "";
+  cuadSel.value = cuads.includes(curCuad) ? curCuad : "";
+
+  const areaList = document.getElementById("areaList");
+  const cuadList = document.getElementById("cuadrillaList");
+  areaList.innerHTML = areas.map(a=>`<option value="${escapeHtml(a)}">`).join("");
+  cuadList.innerHTML = cuads.map(c=>`<option value="${escapeHtml(c)}">`).join("");
+}
+
+function escapeHtml(s){
+  return String(s ?? "").replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+/* ---------- Render tabla ---------- */
+function legendMap(){
+  const m = {};
+  legend.forEach(l=> m[l.code.toUpperCase()] = l);
+  return m;
+}
+
+function renderWeekLabel(){
+  const dates = weekDates(weekStart);
+  document.getElementById("weekLabel").textContent =
+    `${fmtDDMMYYYY(dates[0])} – ${fmtDDMMYYYY(dates[6])}`;
+}
+
+function renderHeader(){
+  const dates = weekDates(weekStart);
+  const head = document.getElementById("headRow");
+  let html = `
+    <th class="sticky-col col1" style="left:0;min-width:120px;">Área</th>
+    <th class="sticky-col col2" style="left:120px;min-width:100px;">Cuadrilla</th>
+    <th style="min-width:65px;">Ficha</th>
+    <th style="min-width:190px;text-align:left;">Nombre</th>
+    <th style="min-width:95px;">Tipo</th>
+  `;
+  dates.forEach((d,i)=>{
+    html += `<th class="day-head"><span class="day-name">${DIAS[i]}</span><span class="day-date">${fmtDDMMYYYY(d)}</span></th>`;
+  });
+  html += `<th style="min-width:130px;">Nota</th><th style="min-width:70px;">Acciones</th>`;
+  head.innerHTML = html;
+}
+
+function renderBody(){
+  const body = document.getElementById("bodyRows");
+  const dates = weekDates(weekStart);
+  const list = filteredEmployees().sort((a,b)=>{
+    if(a.area!==b.area) return (a.area||"").localeCompare(b.area||"");
+    if(a.cuadrilla!==b.cuadrilla) return (a.cuadrilla||"").localeCompare(b.cuadrilla||"");
+    return (a.nombre||"").localeCompare(b.nombre||"");
+  });
+
+  document.getElementById("emptyState").style.display = list.length ? "none" : "block";
+
+  const lm = legendMap();
+  let html = "";
+  list.forEach(emp=>{
+    html += `<tr data-id="${emp.id}">`;
+    html += `<td class="sticky-col col-area" style="left:0;">${escapeHtml(emp.area)||"—"}</td>`;
+    html += `<td class="sticky-col col-area" style="left:120px;font-weight:400;color:#4a5567;">${escapeHtml(emp.cuadrilla)||"—"}</td>`;
+    html += `<td class="col-ficha">${escapeHtml(emp.ficha)||"—"}</td>`;
+    html += `<td class="col-nombre">${escapeHtml(emp.nombre)}</td>`;
+    html += `<td class="col-tipo"><span class="badge-tipo ${emp.tipo==='Empleado'?'badge-empleado':'badge-sindicalizado'}">${emp.tipo}</span></td>`;
+    dates.forEach(d=>{
+      const key = toKey(d);
+      const code = (schedule[`${emp.id}_${key}`] || "").toUpperCase();
+      const info = lm[code];
+      if (code && info){
+        html += `<td class="day-cell"><span class="shift-pill" style="background:${info.color};color:${info.text};" data-emp="${emp.id}" data-date="${key}" title="${escapeHtml(info.label)}">${escapeHtml(code)}</span></td>`;
+      } else if (code){
+        html += `<td class="day-cell"><span class="shift-pill" style="background:#eef1f5;color:#405070;" data-emp="${emp.id}" data-date="${key}">${escapeHtml(code)}</span></td>`;
+      } else {
+        html += `<td class="day-cell"><span class="shift-pill empty" data-emp="${emp.id}" data-date="${key}">+</span></td>`;
+      }
+    });
+    html += `<td class="col-nota">${escapeHtml(emp.nota)||""}</td>`;
+    html += `<td><div class="row-actions">
+      <button class="icon-btn edit-emp" data-id="${emp.id}" title="Editar">✎</button>
+      <button class="icon-btn del del-emp" data-id="${emp.id}" title="Eliminar">🗑</button>
+    </div></td>`;
+    html += `</tr>`;
+  });
+  body.innerHTML = html;
+
+  // listeners de celdas
+  body.querySelectorAll(".shift-pill").forEach(el=>{
+    el.addEventListener("click", ()=> openShiftPicker(parseInt(el.dataset.emp), el.dataset.date));
+  });
+  body.querySelectorAll(".edit-emp").forEach(el=>{
+    el.addEventListener("click", ()=> openEmpModal(parseInt(el.dataset.id)));
+  });
+  body.querySelectorAll(".del-emp").forEach(el=>{
+    el.addEventListener("click", ()=> deleteEmployee(parseInt(el.dataset.id)));
+  });
+}
+
+function renderSummary(){
+  const list = filteredEmployees();
+  const empleados = list.filter(e=>e.tipo==="Empleado").length;
+  const sindic = list.filter(e=>e.tipo==="Sindicalizado").length;
+  const areas = new Set(list.map(e=>e.area).filter(Boolean)).size;
+  document.getElementById("summaryRow").innerHTML = `
+    <div class="chip">Total visible: <b>${list.length}</b></div>
+    <div class="chip">Empleados: <b>${empleados}</b></div>
+    <div class="chip">Sindicalizados: <b>${sindic}</b></div>
+    <div class="chip">Áreas: <b>${areas}</b></div>
+  `;
+}
+
+function renderLegendBar(){
+  const el = document.getElementById("legendItems");
+  el.innerHTML = legend.map(l=>`
+    <div class="legend-item">
+      <span class="shift-pill" style="background:${l.color};color:${l.text};min-width:26px;height:22px;">${escapeHtml(l.code)}</span>
+      <span>${escapeHtml(l.label)}</span>
+    </div>
+  `).join("");
+}
+
+function renderAll(){
+  populateSelectOptions();
+  renderWeekLabel();
+  renderHeader();
+  renderBody();
+  renderSummary();
+  renderLegendBar();
+}
+
+/* ---------- Modal Empleado ---------- */
+function openEmpModal(id){
+  editingEmpId = id || null;
+  const overlay = document.getElementById("empOverlay");
+  document.getElementById("empModalTitle").textContent = id ? "Editar empleado" : "Nuevo empleado";
+  document.getElementById("empDeleteBtn").style.display = id ? "inline-flex" : "none";
+  if (id){
+    const emp = employees.find(e=>e.id===id);
+    document.getElementById("empFicha").value = emp.ficha || "";
+    document.getElementById("empTipo").value = emp.tipo || "Empleado";
+    document.getElementById("empNombre").value = emp.nombre || "";
+    document.getElementById("empArea").value = emp.area || "";
+    document.getElementById("empCuadrilla").value = emp.cuadrilla || "";
+    document.getElementById("empNota").value = emp.nota || "";
+  } else {
+    ["empFicha","empNombre","empArea","empCuadrilla","empNota"].forEach(id2=>document.getElementById(id2).value="");
+    document.getElementById("empTipo").value = "Empleado";
+  }
+  overlay.classList.add("show");
+}
+function closeEmpModal(){ document.getElementById("empOverlay").classList.remove("show"); }
+
+function saveEmpModal(){
+  const nombre = document.getElementById("empNombre").value.trim();
+  if (!nombre){ toast("El nombre es obligatorio"); return; }
+  const data = {
+    ficha: document.getElementById("empFicha").value.trim(),
+    tipo: document.getElementById("empTipo").value,
+    nombre,
+    area: document.getElementById("empArea").value.trim(),
+    cuadrilla: document.getElementById("empCuadrilla").value.trim(),
+    nota: document.getElementById("empNota").value.trim(),
+  };
+  if (editingEmpId){
+    const emp = employees.find(e=>e.id===editingEmpId);
+    Object.assign(emp, data);
+    toast("Empleado actualizado");
+  } else {
+    const newId = employees.length ? Math.max(...employees.map(e=>e.id))+1 : 1;
+    employees.push({ id:newId, ...data });
+    toast("Empleado agregado");
+  }
+  saveEmployees();
+  closeEmpModal();
+  renderAll();
+}
+
+function deleteEmployee(id){
+  const emp = employees.find(e=>e.id===id);
+  if (!emp) return;
+  if (!confirm(`¿Eliminar a ${emp.nombre}? Esta acción no se puede deshacer.`)) return;
+  employees = employees.filter(e=>e.id!==id);
+  Object.keys(schedule).forEach(k=>{ if (k.startsWith(id+"_")) delete schedule[k]; });
+  saveEmployees(); saveSchedule();
+  toast("Empleado eliminado");
+  renderAll();
+}
+
+/* ---------- Modal turno (celda) ---------- */
+function openShiftPicker(empId, dateKey){
+  activeCell = { empId, dateKey };
+  const emp = employees.find(e=>e.id===empId);
+  const dateObj = new Date(dateKey+"T00:00:00");
+  document.getElementById("shiftModalTitle").textContent = `${emp.nombre} · ${fmtDDMMYYYY(dateObj)}`;
+  const current = (schedule[`${empId}_${dateKey}`] || "").toUpperCase();
+
+  const picker = document.getElementById("shiftPicker");
+  let html = legend.map(l=>`
+    <div class="shift-opt ${current===l.code.toUpperCase()?'selected':''}" data-code="${escapeHtml(l.code)}"
+         style="background:${l.color};color:${l.text};">${escapeHtml(l.code)} · ${escapeHtml(l.label)}</div>
+  `).join("");
+  html += `<div class="shift-opt clear" data-code="">Borrar</div>`;
+  picker.innerHTML = html;
+  document.getElementById("shiftCustom").value = legend.some(l=>l.code.toUpperCase()===current) ? "" : current;
+
+  picker.querySelectorAll(".shift-opt").forEach(el=>{
+    el.addEventListener("click", ()=>{
+      picker.querySelectorAll(".shift-opt").forEach(o=>o.classList.remove("selected"));
+      el.classList.add("selected");
+      document.getElementById("shiftCustom").value = "";
+      picker.dataset.chosen = el.dataset.code;
+    });
+  });
+  picker.dataset.chosen = current;
+
+  document.getElementById("shiftOverlay").classList.add("show");
+}
+function closeShiftModal(){ document.getElementById("shiftOverlay").classList.remove("show"); activeCell=null; }
+
+function applyShift(){
+  if (!activeCell) return;
+  const custom = document.getElementById("shiftCustom").value.trim().toUpperCase();
+  const picker = document.getElementById("shiftPicker");
+  const chosen = custom || picker.dataset.chosen || "";
+  const key = `${activeCell.empId}_${activeCell.dateKey}`;
+  if (chosen){ schedule[key] = chosen; } else { delete schedule[key]; }
+  saveSchedule();
+  closeShiftModal();
+  renderBody();
+}
+
+/* ---------- Modal Leyenda ---------- */
+function openLegendModal(){
+  renderLegendForm();
+  document.getElementById("legendOverlay").classList.add("show");
+}
+function closeLegendModal(){ document.getElementById("legendOverlay").classList.remove("show"); }
+
+function renderLegendForm(){
+  const el = document.getElementById("legendForm");
+  el.innerHTML = legend.map((l,i)=>`
+    <div class="form-row" data-idx="${i}" style="align-items:flex-end;">
+      <div class="form-group" style="max-width:70px;">
+        <label>Código</label>
+        <input type="text" class="lg-code" value="${escapeHtml(l.code)}" maxlength="6"/>
+      </div>
+      <div class="form-group">
+        <label>Descripción</label>
+        <input type="text" class="lg-label" value="${escapeHtml(l.label)}"/>
+      </div>
+      <div class="form-group" style="max-width:56px;">
+        <label>Color</label>
+        <input type="color" class="lg-color" value="${toHex(l.color)}" style="padding:2px;height:36px;"/>
+      </div>
+      <button class="icon-btn del lg-remove" title="Quitar">🗑</button>
+    </div>
+  `).join("");
+  el.querySelectorAll(".lg-remove").forEach(btn=>{
+    btn.addEventListener("click", (e)=>{
+      const row = e.target.closest("[data-idx]");
+      row.remove();
+    });
+  });
+}
+function toHex(c){
+  if (c.startsWith("#")) return c;
+  return "#dde3eb";
+}
+
+function addLegendRow(){
+  const el = document.getElementById("legendForm");
+  const div = document.createElement("div");
+  div.className="form-row"; div.style.alignItems="flex-end";
+  div.innerHTML = `
+      <div class="form-group" style="max-width:70px;">
+        <label>Código</label>
+        <input type="text" class="lg-code" maxlength="6"/>
+      </div>
+      <div class="form-group">
+        <label>Descripción</label>
+        <input type="text" class="lg-label"/>
+      </div>
+      <div class="form-group" style="max-width:56px;">
+        <label>Color</label>
+        <input type="color" class="lg-color" value="#dde3eb" style="padding:2px;height:36px;"/>
+      </div>
+      <button class="icon-btn del lg-remove" title="Quitar">🗑</button>
+  `;
+  div.querySelector(".lg-remove").addEventListener("click", ()=>div.remove());
+  el.appendChild(div);
+}
+
+function saveLegendForm(){
+  const rows = document.querySelectorAll("#legendForm [data-idx], #legendForm .form-row");
+  const newLegend = [];
+  document.querySelectorAll("#legendForm .form-row").forEach(row=>{
+    const code = row.querySelector(".lg-code").value.trim().toUpperCase();
+    const label = row.querySelector(".lg-label").value.trim();
+    const color = row.querySelector(".lg-color").value;
+    if (code && label){
+      newLegend.push({ code, label, color, text: contrastText(color) });
+    }
+  });
+  if (!newLegend.length){ toast("Agrega al menos un código"); return; }
+  legend = newLegend;
+  saveLegend();
+  closeLegendModal();
+  renderAll();
+  toast("Leyenda actualizada");
+}
+function contrastText(hex){
+  const c = hex.replace("#","");
+  const r = parseInt(c.substr(0,2),16), g=parseInt(c.substr(2,2),16), b=parseInt(c.substr(4,2),16);
+  const lum = (0.299*r + 0.587*g + 0.114*b)/255;
+  return lum > 0.6 ? "#2a2a2a" : "#1a1a1a";
+}
+
+/* ---------- Exportar Excel ---------- */
+function exportExcel(){
+  const dates = weekDates(weekStart);
+  const list = filteredEmployees().sort((a,b)=>{
+    if(a.area!==b.area) return (a.area||"").localeCompare(b.area||"");
+    if(a.cuadrilla!==b.cuadrilla) return (a.cuadrilla||"").localeCompare(b.cuadrilla||"");
+    return (a.nombre||"").localeCompare(b.nombre||"");
+  });
+  const headRow1 = ["AREA","CUADRILLA","FICHA","NOMBRE","TIPO", ...DIAS, "NOTA"];
+  const headRow2 = ["","","","","", ...dates.map(d=>fmtDDMMYYYY(d)), ""];
+  const rows = [headRow1, headRow2];
+  list.forEach(emp=>{
+    const row = [emp.area||"", emp.cuadrilla||"", emp.ficha||"", emp.nombre||"", emp.tipo||""];
+    dates.forEach(d=>{
+      row.push(schedule[`${emp.id}_${toKey(d)}`] || "");
+    });
+    row.push(emp.nota||"");
+    rows.push(row);
+  });
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws["!cols"] = [{wch:16},{wch:13},{wch:8},{wch:30},{wch:14},
+    ...DIAS.map(()=>({wch:9})), {wch:22}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Roll de turnos");
+
+  const legendRows = [["CÓDIGO","DESCRIPCIÓN"], ...legend.map(l=>[l.code,l.label])];
+  const ws2 = XLSX.utils.aoa_to_sheet(legendRows);
+  XLSX.utils.book_append_sheet(wb, ws2, "Leyenda");
+
+  const fname = `Roll_Turnos_${toKey(dates[0])}_a_${toKey(dates[6])}.xlsx`;
+  XLSX.writeFile(wb, fname);
+  toast("Excel exportado");
+}
+
+/* ---------- Exportar PDF ---------- */
+function exportPdf(){
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation:"landscape", unit:"pt", format:"a4" });
+  const dates = weekDates(weekStart);
+  const list = filteredEmployees().sort((a,b)=>{
+    if(a.area!==b.area) return (a.area||"").localeCompare(b.area||"");
+    if(a.cuadrilla!==b.cuadrilla) return (a.cuadrilla||"").localeCompare(b.cuadrilla||"");
+    return (a.nombre||"").localeCompare(b.nombre||"");
+  });
+
+  doc.setFontSize(13);
+  doc.setTextColor(20,40,70);
+  doc.text("Control de Roll de Turnos", 32, 30);
+  doc.setFontSize(9.5);
+  doc.setTextColor(90,100,120);
+  doc.text(`Semana: ${fmtDDMMYYYY(dates[0])} – ${fmtDDMMYYYY(dates[6])}`, 32, 45);
+
+  const head = [["Área","Cuadrilla","Ficha","Nombre","Tipo", ...DIAS.map((d,i)=>`${d}\n${fmtDDMMYYYY(dates[i])}`), "Nota"]];
+  const body = list.map(emp=>{
+    const row = [emp.area||"", emp.cuadrilla||"", emp.ficha||"", emp.nombre||"", emp.tipo||""];
+    dates.forEach(d=> row.push(schedule[`${emp.id}_${toKey(d)}`] || ""));
+    row.push(emp.nota||"");
+    return row;
+  });
+
+  doc.autoTable({
+    head, body,
+    startY: 56,
+    styles:{ fontSize:6.8, cellPadding:3, valign:"middle" },
+    headStyles:{ fillColor:[22,50,88], textColor:255, fontSize:6.6 },
+    columnStyles:{
+      0:{cellWidth:62}, 1:{cellWidth:52}, 2:{cellWidth:34}, 3:{cellWidth:110}, 4:{cellWidth:48},
+    },
+    theme:"grid",
+    margin:{left:24, right:24},
+  });
+
+  const dates0 = toKey(dates[0]), dates6 = toKey(dates[6]);
+  doc.save(`Roll_Turnos_${dates0}_a_${dates6}.pdf`);
+  toast("PDF exportado");
+}
+
+/* ---------- PWA instalación ---------- */
+window.addEventListener("beforeinstallprompt", (e)=>{
+  e.preventDefault();
+  deferredPrompt = e;
+  document.getElementById("btnInstall").classList.add("show");
+});
+document.getElementById("btnInstall").addEventListener("click", async ()=>{
+  if (!deferredPrompt) return;
+  deferredPrompt.prompt();
+  await deferredPrompt.userChoice;
+  deferredPrompt = null;
+  document.getElementById("btnInstall").classList.remove("show");
+});
+window.addEventListener("appinstalled", ()=>{
+  document.getElementById("btnInstall").classList.remove("show");
+  toast("Aplicación instalada");
+});
+
+/* ---------- Service worker ---------- */
+if ("serviceWorker" in navigator){
+  window.addEventListener("load", ()=>{
+    navigator.serviceWorker.register("service-worker.js").catch(()=>{});
+  });
+}
+
+/* ---------- Eventos ---------- */
+function bindEvents(){
+  document.getElementById("fSearch").addEventListener("input", renderAll);
+  document.getElementById("fTipo").addEventListener("change", renderAll);
+  document.getElementById("fArea").addEventListener("change", renderAll);
+  document.getElementById("fCuadrilla").addEventListener("change", renderAll);
+
+  document.getElementById("btnPrevWeek").addEventListener("click", ()=>{
+    weekStart = addDays(weekStart,-7); saveWeek(); renderAll();
+  });
+  document.getElementById("btnNextWeek").addEventListener("click", ()=>{
+    weekStart = addDays(weekStart,7); saveWeek(); renderAll();
+  });
+  document.getElementById("btnToday").addEventListener("click", ()=>{
+    weekStart = mondayOf(new Date()); saveWeek(); renderAll();
+  });
+
+  document.getElementById("btnAddEmp").addEventListener("click", ()=>openEmpModal(null));
+  document.getElementById("empClose").addEventListener("click", closeEmpModal);
+  document.getElementById("empCancel").addEventListener("click", closeEmpModal);
+  document.getElementById("empSave").addEventListener("click", saveEmpModal);
+  document.getElementById("empDeleteBtn").addEventListener("click", ()=>{
+    if (editingEmpId){ closeEmpModal(); deleteEmployee(editingEmpId); }
+  });
+
+  document.getElementById("shiftClose").addEventListener("click", closeShiftModal);
+  document.getElementById("shiftCancel").addEventListener("click", closeShiftModal);
+  document.getElementById("shiftApply").addEventListener("click", applyShift);
+
+  document.getElementById("btnLegend").addEventListener("click", openLegendModal);
+  document.getElementById("legendClose").addEventListener("click", closeLegendModal);
+  document.getElementById("legendAddRow").addEventListener("click", addLegendRow);
+  document.getElementById("legendSave").addEventListener("click", saveLegendForm);
+
+  document.getElementById("btnExportExcel").addEventListener("click", exportExcel);
+  document.getElementById("btnExportPdf").addEventListener("click", exportPdf);
+
+  [document.getElementById("empOverlay"), document.getElementById("shiftOverlay"), document.getElementById("legendOverlay")]
+    .forEach(ov=> ov.addEventListener("click", (e)=>{ if (e.target===ov) ov.classList.remove("show"); }));
+}
+
+/* ---------- Init ---------- */
+(async function init(){
+  loadAll();
+  await bootstrapEmployees();
+  bindEvents();
+  renderAll();
+})();
+</script>
+</body>
+</html>
